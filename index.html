@@ -113,6 +113,15 @@ code{background:var(--bg);padding:2px 6px;border-radius:6px;font-size:13px;direc
 <script type="module">
 const FB_VER = '10.12.2';
 const DEFAULT_CATS = ['סרטים','סדרות','שירים','אמנים','ספרים'];
+const DEFAULT_NAMES = {a:'יוגבר',b:'טלטול'};
+const EMBED_FB = {
+  apiKey: "AIzaSyAL0ynxeTScSzedsyAZz8sZ7qBY6JNwih0",
+  authDomain: "mekirim-1a395.firebaseapp.com",
+  projectId: "mekirim-1a395",
+  storageBucket: "mekirim-1a395.firebasestorage.app",
+  messagingSenderId: "298743424821",
+  appId: "1:298743424821:web:9ac7bfdeec14fee3e54e7c"
+};
 const $ = (s,el=document)=>el.querySelector(s);
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const LS = {
@@ -156,7 +165,7 @@ async function firebaseStore(fb,room,onStatus){
   const col=fs.collection(roomRef,'items');
   const err=e=>{console.error(e);onStatus(false,e.code==='permission-denied'?'אין הרשאה — בדקו את חוקי Firestore':'בעיית חיבור')};
   return {
-    onMeta(cb){fs.onSnapshot(roomRef,{includeMetadataChanges:true},s=>{onStatus(!s.metadata.fromCache);cb(s.data()||null)},err)},
+    onMeta(cb){fs.onSnapshot(roomRef,{includeMetadataChanges:true},s=>{onStatus(!s.metadata.fromCache);if(!s.exists()&&!s.metadata.fromCache){fs.setDoc(roomRef,{names:DEFAULT_NAMES,cats:DEFAULT_CATS,created:Date.now()},{merge:true});return}cb(s.data()||null)},err)},
     onItems(cb){fs.onSnapshot(col,s=>cb(s.docs.map(d=>({id:d.id,...d.data()}))),err)},
     setMeta(m){return fs.setDoc(roomRef,m,{merge:true})},
     add(it){return fs.addDoc(col,it)},
@@ -175,6 +184,16 @@ const color=w=>w==='a'?'var(--a)':'var(--b)';
 
 /* handle join link */
 (function(){
+  const r=location.hash.match(/[#&]r=([a-z0-9]{20,})/);
+  if(r){
+    const me=(location.hash.match(/[#&]me=([ab])/)||[])[1];
+    const changed=!S.cfg||S.cfg.room!==r[1];
+    S.cfg={mode:'fb',fb:EMBED_FB,room:r[1]};LS.set('mk_cfg',S.cfg);
+    if(changed){S.me=null;LS.del('mk_me')}
+    if(me){S.me=me;LS.set('mk_me',me)}
+    history.replaceState(null,'',location.pathname+location.search);
+    return;
+  }
   const m=location.hash.match(/join=([^&]+)/);
   if(!m)return;
   try{
@@ -191,6 +210,7 @@ const color=w=>w==='a'?'var(--a)':'var(--b)';
 
 function inviteLink(forWho){
   const base=location.origin+location.pathname;
+  if(S.cfg.fb.projectId===EMBED_FB.projectId)return base+'#r='+S.cfg.room+'&me='+forWho;
   return base+'#join='+b64e({fb:S.cfg.fb,room:S.cfg.room,me:forWho});
 }
 
@@ -201,13 +221,22 @@ function parseCfg(txt){
   return out.apiKey&&out.projectId?out:null;
 }
 function renderSetup(){
+  if(EMBED_FB&&!S.forceSetup){
+    $('#app').innerHTML=`<div class="setup">
+      <div class="venn" style="transform:scale(1.8);transform-origin:right"><i></i><i></i></div>
+      <h1>מכירים?</h1>
+      <p>כדי להיכנס, פתחו את הקישור האישי שקיבלתם — הוא מחבר אתכם לחדר המשותף.</p>
+      <button class="btn ghost" id="adv" style="margin-top:30px">הגדרה מתקדמת</button></div>`;
+    $('#adv').onclick=()=>{S.forceSetup=true;renderSetup()};
+    return;
+  }
   $('#app').innerHTML=`
   <div class="setup">
     <div class="venn" style="transform:scale(1.8);transform-origin:right"><i></i><i></i></div>
     <h1>מכירים?</h1>
     <p>אפליקציה לשניים: מכניסים דברים שאוהבים — סרטים, שירים, ספרים, מה שבא — וכל אחד מסמן מה הוא מכיר ונותן דירוג.</p>
-    <div class="field"><label>השם שלך</label><input id="nA" value="יוגבר"></div>
-    <div class="field"><label>השם שלה/שלו</label><input id="nB" value="טלטול"></div>
+    <div class="field"><label>השם שלך</label><input id="nA" value="${DEFAULT_NAMES.a}"></div>
+    <div class="field"><label>השם שלה/שלו</label><input id="nB" value="${DEFAULT_NAMES.b}"></div>
     <div class="field"><label>הגדרות Firebase (הדביקו את firebaseConfig מהקונסול)</label>
       <textarea id="cfg" dir="ltr" placeholder='const firebaseConfig = {&#10;  apiKey: "...",&#10;  projectId: "...",&#10;  ...&#10;};'></textarea>
       <div class="small">אין עדיין? אפשר להתחיל במצב ניסיון ולחבר אחר כך.</div>
